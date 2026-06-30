@@ -178,6 +178,7 @@ curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
 2. bge-base-zh-v1.5 是纯中文模型,文档含较多英文时检索质量会下降,
    届时考虑换 bge-m3(多语言,内存够)。
 
-3. 首次下载模型慢是正常的,已配 hf-mirror.com 加速。
+3. 首次下载模型慢是正常的。TEI 服务默认使用 TEI_HF_ENDPOINT=https://huggingface.co,
+   不走全局 HF_ENDPOINT=https://hf-mirror.com,避免镜像站缺 ETag 导致启动失败。
 
 4. rerank 已纳入 docker-compose-base.yml,会随 compose up/down 一起管理。

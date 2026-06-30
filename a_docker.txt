@@ -18,12 +18,13 @@ echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
 【1. 确认 .env 配置(已改好)】
 
 cd docker
-grep -nE 'tei-cpu|tei-rerank|TEI_MODEL=|TEI_RERANK_MODEL=|HF_ENDPOINT=' .env
+grep -nE 'tei-cpu|tei-rerank|TEI_MODEL=|TEI_RERANK_MODEL=|TEI_HF_ENDPOINT=|HF_ENDPOINT=' .env
 
 应看到:
   - COMPOSE_PROFILES=${COMPOSE_PROFILES},tei-cpu,tei-rerank
   - TEI_MODEL=${TEI_MODEL:-BAAI/bge-base-zh-v1.5}
   - TEI_RERANK_MODEL=BAAI/bge-reranker-base
+  - TEI_HF_ENDPOINT=https://huggingface.co
   - HF_ENDPOINT=https://hf-mirror.com
 
 可选:数据量不大时把 MEM_LIMIT 从 7.5G 调到 4G(MEM_LIMIT=4294967296),给其他组件腾内存。
@@ -112,7 +113,8 @@ docker stats
    - 后端在 Docker 里      → 用容器名 http://tei-rerank:80、http://tei:80
    - 后端在宿主机直跑      → 用 http://localhost:6381、http://localhost:6380
 
-3. 首次下载模型慢是正常的,已配 hf-mirror.com 加速。
+3. 首次下载模型慢是正常的。TEI 服务默认使用 TEI_HF_ENDPOINT=https://huggingface.co,
+   不走全局 HF_ENDPOINT=https://hf-mirror.com,避免镜像站缺 ETag 导致启动失败。
 
 4. bge-base-zh-v1.5 是纯中文模型,文档含较多英文时检索质量会下降,
    届时考虑换 bge-m3(多语言,内存够)。
