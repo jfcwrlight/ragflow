@@ -5,8 +5,8 @@ Embedding = BAAI/bge-base-zh-v1.5,Rerank = BAAI/bge-reranker-base
 
 【架构说明】
   - 依赖服务(MySQL/ES/MinIO/Redis/TEI-embedding/TEI-rerank)→ Docker 容器
-  - 后端 API + 任务执行器 → 宿主机 python 直接跑(改完 Ctrl+C 重启)
-  - 前端 → 宿主机 npm run dev(改完自动热重载)
+  - 后端 API + 任务执行器 → 宿主机 python 直接跑,推荐后台常驻; API 可用 --debug 自动重载
+  - 前端 → 宿主机 Vite dev server 后台运行(web/ 改完自动热重载)
 
 
 【0. 前置环境(首次)】
@@ -72,27 +72,135 @@ docker compose -f docker/docker-compose-base.yml ps tei-rerank
 # (TEI embedding base_url 已是 http://localhost:6380,不用改)
 
 
-【4. 跑后端(宿主机)】
+【4. 跑后端(宿主机,推荐后台运行)】
 
+# 先在项目根目录执行
+mkdir -p logs
 source .venv/bin/activate
 export PYTHONPATH=$(pwd)
 
-# API 服务(改后端代码 → Ctrl+C 重启本进程)
-python3 api/ragflow_server.py
+# 方式 A: 一次后台启动 API + 任务执行器(最省事,带失败重试)
+# 适合少改后端、主要改前端、或只想让服务常驻。
+./ragflow-backend.sh start
 
-# 任务执行器(另开一个终端,同样先 activate + export PYTHONPATH)
-python3 rag/svr/task_executor.py -i 0
+# 看后端日志
+# Ctrl+C 只退出 tail 看日志,不会停止后台服务。
+./ragflow-backend-logs.sh
+
+# 停止 / 重启
+./ragflow-backend.sh stop
+./ragflow-backend.sh restart
+
+# 方式 B: 频繁改 API 时分开后台启动(API 自动重载,worker 常驻)
+# 如果已经用了方式 A,不要再执行方式 B,避免端口/worker 重复。
+nohup bash -lc 'source .venv/bin/activate && export PYTHONPATH="$PWD" && exec python3 api/ragflow_server.py --debug' \
+  > logs/ragflow-api.log 2>&1 &
+echo $! > logs/ragflow-api.pid
+
+nohup bash -lc 'source .venv/bin/activate && export PYTHONPATH="$PWD" && exec python3 rag/svr/task_executor.py -i 0' \
+  > logs/ragflow-task-executor.log 2>&1 &
+echo $! > logs/ragflow-task-executor.pid
+
+tail -f logs/ragflow-api.log logs/ragflow-task-executor.log
+
+# 只改前端页面/接口联调时,可以只启动 API,暂时不启动 task_executor;
+# 但上传文档后的解析任务不会跑。
 
 # 看到 "RAGFlow server is ready" + "Running on http://0.0.0.0:9380" 即就绪
 
 
-【5. 跑前端(宿主机,另开终端)】
+【5. 跑前端(宿主机,推荐后台运行)】
 
+mkdir -p logs
 cd web
-npm run dev
+nohup npm run dev > ../logs/ragflow-web.log 2>&1 &
+echo $! > ../logs/ragflow-web.pid
+cd ..
+
+# 看前端日志和访问地址
+# Ctrl+C 只退出 tail 看日志,不会停止后台服务。
+tail -f logs/ragflow-web.log
 
 # 改 web/ 下代码自动热重载,无需重启
 # 访问前端 dev server 输出的地址(已配好代理到后端 9380)
+
+
+【5.1. 启动慢时怎么选】
+
+1. 不要每次执行 uv sync / download_deps.py / npm install。
+   这些只在首次安装或依赖变化时执行,日常开发直接启动服务即可。
+
+2. 依赖服务和模型容器保持常驻:
+   docker compose -f docker/docker-compose-base.yml up -d
+   MySQL / ES / Redis / MinIO / TEI embedding / TEI rerank 不改配置时不用反复 down/up。
+
+3. 频繁改 API:
+   用【4】方式 B 的 python3 api/ragflow_server.py --debug。
+   保存 API 代码后会自动重启 API 进程,不用手动 Ctrl+C;
+   但 Python 后端每次重载仍要重新导入依赖,不可能像前端 HMR 一样秒级。
+
+4. 频繁改 web/:
+   后端用【4】方式 A 后台常驻,前端用【5】后台常驻。
+   Vite 会自动热重载,通常不需要重启前端。
+
+5. 只做页面或普通接口联调:
+   可以只启动 API,暂时不启动 task_executor,启动更轻;
+   代价是文档上传后的解析任务不会执行。
+
+6. 只想完整运行、不频繁改源码:
+   参考 a_docker.txt 的全栈 Docker 方式,一条 docker compose up -d 后全部后台运行;
+   这种方式更省心,但改宿主机源码的即时反馈不如本文件的宿主机开发方式。
+
+
+【5.2. 可选: 跑生产构建后的前端(加载更少,但无热重载)】
+
+可以。npm run dev 是开发模式,浏览器会加载大量模块和 HMR 资源;
+生产构建会把代码打包到 web/dist,访问更接近正式部署。
+
+cd web
+npm run build
+cd ..
+
+# 注意:
+# 1. 不能直接用 file:// 打开 web/dist/index.html。
+# 2. 不能只用普通静态 server 跑 dist,否则 /api/v1 和 /v1 请求没人代理到后端。
+# 3. 需要 nginx/反向代理同时做两件事:
+#    - 静态文件 root 指向 web/dist
+#    - /api 和 /v1 代理到 http://127.0.0.1:9380
+
+# nginx server 示例(宿主机跑后端 API:9380 时)
+# 把 root 改成你的项目绝对路径下的 web/dist; listen 端口可按需改。
+#
+# server {
+#     listen 8080;
+#     server_name _;
+#     root /Users/admin/data/server/ai/ragflow/web/dist;
+#
+#     gzip on;
+#     gzip_types text/plain application/javascript text/css application/json image/svg+xml;
+#
+#     location ~ ^/(v1|api) {
+#         proxy_pass http://127.0.0.1:9380;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_read_timeout 3600s;
+#         proxy_send_timeout 3600s;
+#     }
+#
+#     location / {
+#         index index.html;
+#         try_files $uri $uri/ /index.html;
+#     }
+# }
+#
+# 然后访问: http://localhost:8080
+
+# 这个模式的取舍:
+#   - 优点:浏览器加载资源更少,更接近部署效果。
+#   - 缺点:web/ 下代码改完不会热重载,每次都要重新 npm run build。
+#   - 如果频繁改前端,仍然用【5】的 npm run dev 更合适。
 
 
 【6. 登录 + 注册模型】
@@ -127,15 +235,29 @@ curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
 ==================================================================
 【日常开发:改了代码怎么更新】
 
-  前端(web/)        → npm run dev 自动热重载,啥都不用做
-  后端(api/、rag/)  → 对应进程 Ctrl+C,重新 python3 启动
+  前端(web/)        → Vite 自动热重载,后台进程不用动
+  后端 API(api/)    → 用 --debug 时自动重载; 未用 --debug 时重启 API
+  任务执行器(rag/、deepdoc/) → 改解析/任务逻辑后重启 task_executor
   依赖/模型           → 不用动,一直挂着
 
   常用:
-    # 重启 API
-    Ctrl+C → python3 api/ragflow_server.py
-    # 重启任务执行器
-    Ctrl+C → python3 rag/svr/task_executor.py -i 0
+    # 方式 A: 启停/重启/看日志
+    ./ragflow-backend.sh start
+    ./ragflow-backend.sh stop
+    ./ragflow-backend.sh restart
+    ./ragflow-backend-logs.sh
+
+    # 方式 B: 看日志
+    tail -f logs/ragflow-api.log logs/ragflow-task-executor.log logs/ragflow-web.log
+
+    # 方式 B / 前端: 停止后台进程(PID 文件方式)
+    for f in logs/ragflow-api.pid logs/ragflow-task-executor.pid logs/ragflow-web.pid; do
+      [ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null || true
+    done
+    rm -f logs/ragflow-api.pid logs/ragflow-task-executor.pid logs/ragflow-web.pid
+
+    # 如果异常退出后还有残留进程,再用匹配方式清理
+    pkill -f "api/ragflow_server.py|rag/svr/task_executor.py|vite --host"
 
 
 ==================================================================
