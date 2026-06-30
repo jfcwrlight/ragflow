@@ -16,7 +16,7 @@ mysql:
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
-  host: 'localhost:9100'
+  host: 'localhost:9200'
   bucket: ''
   prefix_path: ''
 es:
