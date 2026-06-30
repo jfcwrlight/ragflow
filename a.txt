@@ -87,6 +87,7 @@ docker compose -f docker/docker-compose-base.yml ps tei-rerank
 mkdir -p logs
 source .venv/bin/activate
 export PYTHONPATH=$(pwd)
+export NLTK_DATA="$PWD/ragflow_deps/nltk_data:$PWD/nltk_data"
 
 # 方式 A: 一次后台启动 API + 任务执行器(最省事,带失败重试)
 # 适合少改后端、主要改前端、或只想让服务常驻。
@@ -102,11 +103,11 @@ export PYTHONPATH=$(pwd)
 
 # 方式 B: 频繁改 API 时分开后台启动(API 自动重载,worker 常驻)
 # 如果已经用了方式 A,不要再执行方式 B,避免端口/worker 重复。
-nohup bash -lc 'source .venv/bin/activate && export PYTHONPATH="$PWD" && exec python3 api/ragflow_server.py --debug' \
+nohup bash -lc 'source .venv/bin/activate && export PYTHONPATH="$PWD" && export NLTK_DATA="$PWD/ragflow_deps/nltk_data:$PWD/nltk_data" && exec python3 api/ragflow_server.py --debug' \
   > logs/ragflow-api.log 2>&1 &
 echo $! > logs/ragflow-api.pid
 
-nohup bash -lc 'source .venv/bin/activate && export PYTHONPATH="$PWD" && exec python3 rag/svr/task_executor.py -i 0' \
+nohup bash -lc 'source .venv/bin/activate && export PYTHONPATH="$PWD" && export NLTK_DATA="$PWD/ragflow_deps/nltk_data:$PWD/nltk_data" && exec python3 rag/svr/task_executor.py -i 0' \
   > logs/ragflow-task-executor.log 2>&1 &
 echo $! > logs/ragflow-task-executor.pid
 

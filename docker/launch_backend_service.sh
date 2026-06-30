@@ -3,6 +3,9 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 usage() {
     local exit_code=${1:-1}
     echo "Usage: $0 [ragflow|task_executor|admin|data_sync]..."
@@ -25,9 +28,7 @@ usage() {
 
 # Function to load environment variables from .env file
 load_env_file() {
-    # Get the directory of the current script
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local env_file="$script_dir/.env"
+    local env_file="$SCRIPT_DIR/.env"
 
     # Check if .env file exists
     if [ -f "$env_file" ]; then
@@ -43,10 +44,11 @@ load_env_file() {
 
 # Load environment variables
 load_env_file
+cd "$PROJECT_ROOT"
 
 # Unset HTTP proxies that might be set by Docker daemon
 export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-export PYTHONPATH=$(pwd)
+export PYTHONPATH="$PROJECT_ROOT"
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
 JEMALLOC_PATH=""
@@ -95,7 +97,7 @@ PIDS=()
 # Set the path to the NLTK data directory.
 # ragflow_deps/download_deps.py writes NLTK resources under
 # ragflow_deps/nltk_data, while older local setups may use ./nltk_data.
-export NLTK_DATA="./nltk_data:./ragflow_deps/nltk_data"
+export NLTK_DATA="$PROJECT_ROOT/nltk_data:$PROJECT_ROOT/ragflow_deps/nltk_data"
 
 # Function to handle termination signals
 cleanup() {
