@@ -1,8 +1,14 @@
-const { fontFamily } = require('tailwindcss/defaultTheme');
+import containerQueries from '@tailwindcss/container-queries';
+import lineClamp from '@tailwindcss/line-clamp';
+import scrollbar from 'tailwind-scrollbar';
+import animate from 'tailwindcss-animate';
+import defaultTheme from 'tailwindcss/defaultTheme.js';
+
+const { fontFamily } = defaultTheme;
 
 /** @type {import('tailwindcss').Config} */
 
-module.exports = {
+export default {
   darkMode: ['selector'],
   content: [
     './src/pages/**/*.tsx',
@@ -238,10 +244,5 @@ module.exports = {
       },
     },
   },
-  plugins: [
-    require('tailwindcss-animate'),
-    require('@tailwindcss/line-clamp'),
-    require('tailwind-scrollbar'),
-    require('@tailwindcss/container-queries'),
-  ],
+  plugins: [animate, lineClamp, scrollbar, containerQueries],
 };

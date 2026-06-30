@@ -193,6 +193,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: Number(env.PORT) || 9222,
       strictPort: false,
+      allowedHosts: ['api.pg.panlaxy.io'],
       hmr: {
         overlay: false,
       },
