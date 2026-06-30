@@ -17,11 +17,20 @@ Embedding = BAAI/bge-base-zh-v1.5,Rerank = BAAI/bge-reranker-base
 # uv cache clean graspologic
 uv sync --python 3.13 --all-extras
 uv run python3 ragflow_deps/download_deps.py
+# 上面的 download_deps.py 会把 NLTK 资源下载到 ragflow_deps/nltk_data。
+# 如果解析知识库时报 Resource punkt_tab not found,先确认:
+# test -d ragflow_deps/nltk_data/tokenizers/punkt_tab/english && echo OK
+# 若不存在,重新执行: uv run python3 ragflow_deps/download_deps.py
+
 # Git 提交钩子(开发机可选; 只部署/运行系统可以跳过)
 uvx pre-commit install
 
 # 前端依赖
 cd web && npm install && cd ..
+
+# (Linux 宿主机,推荐)jemalloc 可降低后端 worker 内存碎片; 缺少时脚本会自动跳过,不阻断启动
+# Ubuntu/Debian:
+# sudo apt install -y pkg-config libjemalloc-dev
 
 # (Linux 宿主机)ES 必需:调大内核 mmap 限制
 sudo sysctl -w vm.max_map_count=262144
