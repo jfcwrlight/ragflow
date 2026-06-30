@@ -68,7 +68,7 @@ cd ..
 #     host: 'localhost'
 #     port: 3606            # 原 3306
 #   minio:
-#     host: 'localhost:9200'   # 原 localhost:9000
+#     host: 'localhost:9300'   # 原 localhost:9000
 #   redis:
 #     host: 'localhost:6779'   # 原 localhost:6379
 #   es:
@@ -158,8 +158,8 @@ curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
   服务            host 端口    容器端口    宿主机访问
   Redis           6779         6379        redis-cli -h 127.0.0.1 -p 6779 -a infini_rag_flow
   MySQL           3606         3306        mysql -h127.0.0.1 -P3606 -uroot -pinfini_rag_flow rag_flow
-  MinIO API       9200         9000        http://localhost:9200
-  MinIO 控制台    9201         9001        http://localhost:9201
+  MinIO API       9300         9000        http://localhost:9300
+  MinIO 控制台    9301         9001        http://localhost:9301
   Elasticsearch   1200         9200        http://localhost:1200
   TEI embedding   6380         80          http://localhost:6380
   TEI rerank      6381         80          http://localhost:6381
@@ -185,7 +185,7 @@ curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
 【提醒】
 
 1. conf/service_conf.yaml 的端口必须和 docker/.env 的对外端口一致
-   (本次:mysql 3606 / redis 6779 / minio 9200),否则本地后端连不上。
+   (本次:mysql 3606 / redis 6779 / minio 9300),否则本地后端连不上。
 
 2. bge-base-zh-v1.5 是纯中文模型,文档含较多英文时检索质量会下降,
    届时考虑换 bge-m3(多语言,内存够)。
