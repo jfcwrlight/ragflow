@@ -305,6 +305,24 @@ services:
     restart: unless-stopped
 
 
+  tei-rerank:
+    profiles:
+      - tei-rerank
+    image: ${TEI_RERANK_IMAGE}
+    container_name: tei-rerank
+    hostname: tei-rerank
+    ports:
+      - ${TEI_RERANK_PORT-6381}:80
+    env_file: .env
+    volumes:
+      - ./data/tei-rerank:/data
+    networks:
+      - ragflow
+    command: ["--model-id", "${TEI_RERANK_MODEL}", "--auto-truncate"]
+    cpus: ${TEI_RERANK_CPUS-3}
+    restart: unless-stopped
+
+
   kibana:
     profiles:
       - kibana

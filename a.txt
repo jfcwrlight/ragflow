@@ -4,10 +4,9 @@ Embedding = BAAI/bge-base-zh-v1.5,Rerank = BAAI/bge-reranker-base
 ==================================================================
 
 【架构说明】
-  - 依赖服务(MySQL/ES/MinIO/Redis/TEI-embedding)→ Docker 容器
+  - 依赖服务(MySQL/ES/MinIO/Redis/TEI-embedding/TEI-rerank)→ Docker 容器
   - 后端 API + 任务执行器 → 宿主机 python 直接跑(改完 Ctrl+C 重启)
   - 前端 → 宿主机 npm run dev(改完自动热重载)
-  - Rerank → 单独 Docker 容器
 
 
 【0. 前置环境(首次)】
@@ -32,30 +31,19 @@ echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
 【1. 起依赖服务(不含 ragflow 主服务)】
 
 cd docker
+# 如果之前按旧步骤手动创建过 tei-rerank, 先执行: docker rm -f tei-rerank
 docker compose -f docker-compose-base.yml up -d
 cd ..
 
-# 这会起:MySQL / ES / MinIO / Redis / TEI-embedding(bge-base-zh-v1.5,端口 6380)
+# 这会起:MySQL / ES / MinIO / Redis / TEI-embedding(bge-base-zh-v1.5,端口 6380) / TEI-rerank(端口 6381)
 # 注意:docker-compose-base.yml 不含 ragflow 主服务,正好留给宿主机跑
 docker compose -f docker/docker-compose-base.yml ps
 
 
-【2. 起 Rerank 容器(单独)】
+【2. 确认 Rerank 容器】
 
-# 先确认网络名(通常 docker_ragflow)
-docker network ls | grep ragflow
-
-cd docker
-docker run -d --name tei-rerank \
-  --network docker_ragflow \
-  --restart unless-stopped \
-  -p 6381:80 \
-  -v $(pwd)/tei_rerank_data:/data \
-  -e HF_ENDPOINT=https://hf-mirror.com \
-  --cpus 3 \
-  infiniflow/text-embeddings-inference:cpu-1.8 \
-  --model-id BAAI/bge-reranker-base --auto-truncate
-cd ..
+# tei-rerank 已在 docker-compose-base.yml 中,随上面的 compose up 自动启动
+docker compose -f docker/docker-compose-base.yml ps tei-rerank
 
 
 【3. ⚠️ 对齐 conf/service_conf.yaml 端口(关键!)】
@@ -174,8 +162,8 @@ curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
   docker compose -f docker/docker-compose-base.yml ps
 
   # rerank 容器
-  docker restart tei-rerank
-  docker logs -f tei-rerank
+  docker compose -f docker/docker-compose-base.yml restart tei-rerank
+  docker compose -f docker/docker-compose-base.yml logs -f tei-rerank
 
   # 资源占用
   docker stats
@@ -192,5 +180,4 @@ curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
 
 3. 首次下载模型慢是正常的,已配 hf-mirror.com 加速。
 
-4. rerank 是独立容器,docker compose down 不会停它,
-   需单独 docker stop tei-rerank。
+4. rerank 已纳入 docker-compose-base.yml,会随 compose up/down 一起管理。

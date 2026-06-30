@@ -15,14 +15,15 @@ sudo sysctl -w vm.max_map_count=262144
 echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
 
 
-【1. 确认 .env 配置(已改好 3 处)】
+【1. 确认 .env 配置(已改好)】
 
 cd docker
-grep -nE 'tei-cpu|TEI_MODEL=|HF_ENDPOINT=' .env
+grep -nE 'tei-cpu|tei-rerank|TEI_MODEL=|TEI_RERANK_MODEL=|HF_ENDPOINT=' .env
 
 应看到:
-  - COMPOSE_PROFILES=${COMPOSE_PROFILES},tei-cpu        (已取消注释)
+  - COMPOSE_PROFILES=${COMPOSE_PROFILES},tei-cpu,tei-rerank
   - TEI_MODEL=${TEI_MODEL:-BAAI/bge-base-zh-v1.5}
+  - TEI_RERANK_MODEL=BAAI/bge-reranker-base
   - HF_ENDPOINT=https://hf-mirror.com
 
 可选:数据量不大时把 MEM_LIMIT 从 7.5G 调到 4G(MEM_LIMIT=4294967296),给其他组件腾内存。
@@ -31,6 +32,7 @@ grep -nE 'tei-cpu|TEI_MODEL=|HF_ENDPOINT=' .env
 【2. 启动全栈服务】
 
 cd docker
+# 如果之前按旧步骤手动创建过 tei-rerank, 先执行: docker rm -f tei-rerank
 docker compose -f docker-compose.yml up -d
 
 # 首次会拉镜像 + 下载 embedding 模型,耐心等。查看状态:
@@ -38,23 +40,11 @@ docker compose -f docker-compose.yml ps
 docker logs -f ragflow-server          # 看到 "RAGFlow server is ready" 即就绪
 
 
-【3. 单独启动 Rerank 容器】
+【3. 确认 Rerank 容器】
 
-# 先确认网络名(通常是 docker_ragflow)
-docker network ls | grep ragflow
-
-cd docker
-docker run -d --name tei-rerank \
-  --network docker_ragflow \
-  --restart unless-stopped \
-  -p 6381:80 \
-  -v $(pwd)/tei_rerank_data:/data \
-  -e HF_ENDPOINT=https://hf-mirror.com \
-  --cpus 3 \
-  infiniflow/text-embeddings-inference:cpu-1.8 \
-  --model-id BAAI/bge-reranker-base --auto-truncate
-
-# 说明:--cpus 3 限制 rerank 用 3 核,给 embedding 和文档解析留 CPU。
+# tei-rerank 已在 docker-compose-base.yml 中,随 compose up 自动启动。
+# TEI_RERANK_CPUS=3 会限制 rerank 用 3 核,给 embedding 和文档解析留 CPU。
+docker compose -f docker-compose.yml ps tei-rerank
 
 
 【4. 验证两个模型服务】
@@ -105,9 +95,9 @@ docker compose -f docker-compose.yml down
 docker compose -f docker-compose.yml up -d
 docker compose -f docker-compose.yml restart ragflow-server
 
-# rerank 容器单独管理
-docker restart tei-rerank
-docker logs -f tei-rerank
+# rerank 容器
+docker compose -f docker-compose.yml restart tei-rerank
+docker compose -f docker-compose.yml logs -f tei-rerank
 
 # 看资源占用
 docker stats
@@ -116,8 +106,7 @@ docker stats
 ==================================================================
 【关键提醒】
 
-1. rerank 是独立容器,不在 compose 里,全栈 down 不会停它,需单独
-   docker stop tei-rerank 管理。
+1. rerank 已纳入 compose,全栈 up/down 会一起管理。
 
 2. Base URL 填法:
    - 后端在 Docker 里      → 用容器名 http://tei-rerank:80、http://tei:80
