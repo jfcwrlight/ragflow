@@ -41,6 +41,8 @@ docker compose -f docker/docker-compose-base.yml ps
 
 # 启动后端前先确认 ES 已 ready; 返回 status 为 green/yellow 才继续
 curl -u elastic:infini_rag_flow 'http://localhost:1200/_cluster/health?pretty'
+# 如果 es01 反复重启,先看日志:
+docker compose -f docker/docker-compose-base.yml logs --tail=100 es01
 
 
 【2. 确认 Rerank 容器】

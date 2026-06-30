@@ -1,8 +1,22 @@
 services:
+  es-init:
+    profiles:
+      - elasticsearch
+    image: elasticsearch:${STACK_VERSION}
+    user: "0"
+    entrypoint: ["sh", "-c"]
+    command: ["mkdir -p /usr/share/elasticsearch/data && chown -R 1000:0 /usr/share/elasticsearch/data && chmod -R g+rwX /usr/share/elasticsearch/data"]
+    volumes:
+      - ./data/esdata01:/usr/share/elasticsearch/data
+    restart: "no"
+
   es01:
     profiles:
       - elasticsearch
     image: elasticsearch:${STACK_VERSION}
+    depends_on:
+      es-init:
+        condition: service_completed_successfully
     volumes:
       - ./data/esdata01:/usr/share/elasticsearch/data
     # Official ES image ACL on /tmp denies writes for user elasticsearch (r-x only).
