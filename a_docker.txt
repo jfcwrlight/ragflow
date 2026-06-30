@@ -40,6 +40,9 @@ docker compose -f docker-compose.yml up -d
 docker compose -f docker-compose.yml ps
 docker logs -f ragflow-server          # 看到 "RAGFlow server is ready" 即就绪
 
+# 如需单独确认 ES 状态,返回 status 为 green/yellow 即可
+curl -u elastic:infini_rag_flow 'http://localhost:1200/_cluster/health?pretty'
+
 
 【3. 确认 Rerank 容器】
 
