@@ -4,7 +4,7 @@ services:
       - elasticsearch
     image: elasticsearch:${STACK_VERSION}
     volumes:
-      - esdata01:/usr/share/elasticsearch/data
+      - ./data/esdata01:/usr/share/elasticsearch/data
     # Official ES image ACL on /tmp denies writes for user elasticsearch (r-x only).
     # entrypoint.sh needs a writable temp dir for bash here-documents.
     tmpfs:
@@ -42,7 +42,7 @@ services:
       - opensearch
     image: opensearchproject/opensearch:2.19.1
     volumes:
-      - osdata01:/usr/share/opensearch/data
+      - ./data/osdata01:/usr/share/opensearch/data
     ports:
       - ${OS_PORT}:9201
     env_file: .env
@@ -78,7 +78,7 @@ services:
       - infinity
     image: infiniflow/infinity:v0.7.0
     volumes:
-      - infinity_data:/var/infinity
+      - ./data/infinity:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
     command: ["-f", "/infinity_conf.toml"]
     ports:
@@ -200,7 +200,7 @@ services:
     ports:
       - ${EXPOSE_MYSQL_PORT}:3306
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ./data/mysql:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
     networks:
       - ragflow
@@ -222,7 +222,7 @@ services:
       - MINIO_ROOT_USER=${MINIO_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
     volumes:
-      - minio_data:/data
+      - ./data/minio:/data
     networks:
       - ragflow
     restart: unless-stopped
@@ -240,7 +240,7 @@ services:
     ports:
       - ${REDIS_PORT}:6379
     volumes:
-      - redis_data:/data
+      - ./data/redis:/data
     networks:
       - ragflow
     restart: unless-stopped
@@ -258,7 +258,7 @@ services:
       - ${NATS_PORT}:4222
       - "8222:8222"
     volumes:
-      - nats_data:/data
+      - ./data/nats:/data
     command: -js -sd /data
     env_file: .env
     networks:
@@ -313,7 +313,7 @@ services:
       - ${KIBANA_PORT-5601}:5601
     env_file: .env
     volumes:
-      - kibana_data:/usr/share/kibana/data
+      - ./data/kibana:/usr/share/kibana/data
     depends_on:
       es01:
         condition: service_started
@@ -325,31 +325,6 @@ services:
     networks:
       - ragflow
     restart: unless-stopped
-
-
-volumes:
-  esdata01:
-    driver: local
-  osdata01:
-    driver: local
-  infinity_data:
-    driver: local
-  ob_data:
-    driver: local
-  seekdb_data:
-    driver: local
-  mysql_data:
-    driver: local
-  minio_data:
-    driver: local
-  redis_data:
-    driver: local
-  tei_data:
-    driver: local
-  kibana_data:
-    driver: local
-  nats_data:
-    driver: local
 
 networks:
   ragflow:

@@ -1,0 +1,196 @@
+RAGFlow 本地开发启动流程(宿主机跑前后端,频繁改代码)
+依赖服务用 Docker,前后端跑在宿主机 → 改代码秒级生效
+Embedding = BAAI/bge-base-zh-v1.5,Rerank = BAAI/bge-reranker-base
+==================================================================
+
+【架构说明】
+  - 依赖服务(MySQL/ES/MinIO/Redis/TEI-embedding)→ Docker 容器
+  - 后端 API + 任务执行器 → 宿主机 python 直接跑(改完 Ctrl+C 重启)
+  - 前端 → 宿主机 npm run dev(改完自动热重载)
+  - Rerank → 单独 Docker 容器
+
+
+【0. 前置环境(首次)】
+
+# Python 依赖(Python 3.10~3.13)
+# 如果 graspologic 从 gitee 拉取时报 HTTP 400, 先临时把该 Git 源改写到 GitHub:
+# git config --global url."https://github.com/infiniflow/graspologic.git".insteadOf "https://gitee.com/infiniflow/graspologic.git"
+# uv cache clean graspologic
+uv sync --python 3.13 --all-extras
+uv run python3 ragflow_deps/download_deps.py
+# Git 提交钩子(开发机可选; 只部署/运行系统可以跳过)
+uvx pre-commit install
+
+# 前端依赖
+cd web && npm install && cd ..
+
+# (Linux 宿主机)ES 必需:调大内核 mmap 限制
+sudo sysctl -w vm.max_map_count=262144
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+
+
+【1. 起依赖服务(不含 ragflow 主服务)】
+
+cd docker
+docker compose -f docker-compose-base.yml up -d
+cd ..
+
+# 这会起:MySQL / ES / MinIO / Redis / TEI-embedding(bge-base-zh-v1.5,端口 6380)
+# 注意:docker-compose-base.yml 不含 ragflow 主服务,正好留给宿主机跑
+docker compose -f docker/docker-compose-base.yml ps
+
+
+【2. 起 Rerank 容器(单独)】
+
+# 先确认网络名(通常 docker_ragflow)
+docker network ls | grep ragflow
+
+cd docker
+docker run -d --name tei-rerank \
+  --network docker_ragflow \
+  --restart unless-stopped \
+  -p 6381:80 \
+  -v $(pwd)/tei_rerank_data:/data \
+  -e HF_ENDPOINT=https://hf-mirror.com \
+  --cpus 3 \
+  infiniflow/text-embeddings-inference:cpu-1.8 \
+  --model-id BAAI/bge-reranker-base --auto-truncate
+cd ..
+
+
+【3. ⚠️ 对齐 conf/service_conf.yaml 端口(关键!)】
+
+# 因为 docker/.env 把对外端口改了,宿主机后端通过这些端口连依赖,
+# 必须把 conf/service_conf.yaml 改成与之匹配,否则连不上。
+# 编辑 conf/service_conf.yaml,改成:
+#
+#   mysql:
+#     host: 'localhost'
+#     port: 3606            # 原 3306
+#   minio:
+#     host: 'localhost:9100'   # 原 localhost:9000
+#   redis:
+#     host: 'localhost:6779'   # 原 localhost:6379
+#   es:
+#     hosts: 'http://localhost:1200'   # 不变
+#
+# (TEI embedding base_url 已是 http://localhost:6380,不用改)
+
+
+【4. 跑后端(宿主机)】
+
+source .venv/bin/activate
+export PYTHONPATH=$(pwd)
+
+# API 服务(改后端代码 → Ctrl+C 重启本进程)
+python3 api/ragflow_server.py
+
+# 任务执行器(另开一个终端,同样先 activate + export PYTHONPATH)
+python3 rag/svr/task_executor.py -i 0
+
+# 看到 "RAGFlow server is ready" + "Running on http://0.0.0.0:9380" 即就绪
+
+
+【5. 跑前端(宿主机,另开终端)】
+
+cd web
+npm run dev
+
+# 改 web/ 下代码自动热重载,无需重启
+# 访问前端 dev server 输出的地址(已配好代理到后端 9380)
+
+
+【6. 登录 + 注册模型】
+
+# 浏览器打开前端 dev server 地址,注册管理员账号并登录
+
+# 模型提供商(Model Providers)→ HuggingFace → 添加两个模型:
+#   Embedding:
+#     模型名:BAAI/bge-base-zh-v1.5
+#     Base URL:http://localhost:6380
+#   Rerank:
+#     模型名:BAAI/bge-reranker-base
+#     Base URL:http://localhost:6381
+#
+# 系统模型设置:Embedding / Rerank / Chat 分别指过去
+#
+# 说明:本地宿主机跑后端时,建议手动注册 embedding(上面这样),
+#       不依赖 COMPOSE_PROFILES 的 Builtin 自动挡(那个需要 host 环境变量含 tei-)。
+
+
+【7. 验证】
+
+# embedding → 返回向量数组
+curl http://localhost:6380/embed -H 'Content-Type: application/json' \
+  -d '{"inputs":"你好世界"}'
+
+# rerank → 返回打分数组
+curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
+  -d '{"query":"什么是RAG","texts":["RAG是检索增强生成","今天天气不错"]}'
+
+
+==================================================================
+【日常开发:改了代码怎么更新】
+
+  前端(web/)        → npm run dev 自动热重载,啥都不用做
+  后端(api/、rag/)  → 对应进程 Ctrl+C,重新 python3 启动
+  依赖/模型           → 不用动,一直挂着
+
+  常用:
+    # 重启 API
+    Ctrl+C → python3 api/ragflow_server.py
+    # 重启任务执行器
+    Ctrl+C → python3 rag/svr/task_executor.py -i 0
+
+
+==================================================================
+【源码目录对照】
+
+  后端 API        : api/        (入口 api/ragflow_server.py)
+  任务执行器      : rag/svr/task_executor.py
+  核心处理        : rag/、deepdoc/、agent/
+  前端            : web/        (React/TypeScript)
+
+
+==================================================================
+【依赖服务端口(docker/.env 已改)】
+
+  服务            host 端口    容器端口    宿主机访问
+  Redis           6779         6379        redis-cli -h 127.0.0.1 -p 6779 -a infini_rag_flow
+  MySQL           3606         3306        mysql -h127.0.0.1 -P3606 -uroot -pinfini_rag_flow rag_flow
+  MinIO API       9100         9000        http://localhost:9100
+  MinIO 控制台    9101         9001        http://localhost:9101
+  Elasticsearch   1200         9200        http://localhost:1200
+  TEI embedding   6380         80          http://localhost:6380
+  TEI rerank      6381         80          http://localhost:6381
+
+
+==================================================================
+【运维命令】
+
+  # 依赖服务
+  docker compose -f docker/docker-compose-base.yml up -d
+  docker compose -f docker/docker-compose-base.yml down
+  docker compose -f docker/docker-compose-base.yml ps
+
+  # rerank 容器
+  docker restart tei-rerank
+  docker logs -f tei-rerank
+
+  # 资源占用
+  docker stats
+
+
+==================================================================
+【提醒】
+
+1. conf/service_conf.yaml 的端口必须和 docker/.env 的对外端口一致
+   (本次:mysql 3606 / redis 6779 / minio 9100),否则本地后端连不上。
+
+2. bge-base-zh-v1.5 是纯中文模型,文档含较多英文时检索质量会下降,
+   届时考虑换 bge-m3(多语言,内存够)。
+
+3. 首次下载模型慢是正常的,已配 hf-mirror.com 加速。
+
+4. rerank 是独立容器,docker compose down 不会停它,
+   需单独 docker stop tei-rerank。

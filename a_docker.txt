@@ -1,0 +1,140 @@
+RAGFlow 部署步骤(Ubuntu / 无 GPU / 64G·8核 / ES 引擎)
+模型:Embedding = BAAI/bge-base-zh-v1.5,Rerank = BAAI/bge-reranker-base
+==================================================================
+
+【0. 前置环境(首次)】
+
+# 装 Docker 和 Compose 插件
+sudo apt update
+sudo apt install -y docker.io docker-compose-v2
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER          # 加完重新登录,免 sudo
+
+# ES 必需:调大内核 mmap 限制,否则 ES 起不来
+sudo sysctl -w vm.max_map_count=262144
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+
+
+【1. 确认 .env 配置(已改好 3 处)】
+
+cd docker
+grep -nE 'tei-cpu|TEI_MODEL=|HF_ENDPOINT=' .env
+
+应看到:
+  - COMPOSE_PROFILES=${COMPOSE_PROFILES},tei-cpu        (已取消注释)
+  - TEI_MODEL=${TEI_MODEL:-BAAI/bge-base-zh-v1.5}
+  - HF_ENDPOINT=https://hf-mirror.com
+
+可选:数据量不大时把 MEM_LIMIT 从 7.5G 调到 4G(MEM_LIMIT=4294967296),给其他组件腾内存。
+
+
+【2. 启动全栈服务】
+
+cd docker
+docker compose -f docker-compose.yml up -d
+
+# 首次会拉镜像 + 下载 embedding 模型,耐心等。查看状态:
+docker compose -f docker-compose.yml ps
+docker logs -f ragflow-server          # 看到 "RAGFlow server is ready" 即就绪
+
+
+【3. 单独启动 Rerank 容器】
+
+# 先确认网络名(通常是 docker_ragflow)
+docker network ls | grep ragflow
+
+cd docker
+docker run -d --name tei-rerank \
+  --network docker_ragflow \
+  --restart unless-stopped \
+  -p 6381:80 \
+  -v $(pwd)/tei_rerank_data:/data \
+  -e HF_ENDPOINT=https://hf-mirror.com \
+  --cpus 3 \
+  infiniflow/text-embeddings-inference:cpu-1.8 \
+  --model-id BAAI/bge-reranker-base --auto-truncate
+
+# 说明:--cpus 3 限制 rerank 用 3 核,给 embedding 和文档解析留 CPU。
+
+
+【4. 验证两个模型服务】
+
+# embedding → 返回向量数组
+curl http://localhost:6380/embed -H 'Content-Type: application/json' \
+  -d '{"inputs":"你好世界"}'
+
+# rerank → 返回打分数组
+curl http://localhost:6381/rerank -H 'Content-Type: application/json' \
+  -d '{"query":"什么是RAG","texts":["RAG是检索增强生成","今天天气不错"]}'
+
+
+【5. 登录 Web 界面】
+
+浏览器打开 http://<服务器IP>:80  (全栈版前端走 nginx 80 端口)
+注册管理员账号并登录。
+
+
+【6. 注册 Rerank 模型】
+
+右上角头像 → 模型提供商(Model Providers) → 找到 HuggingFace → 添加模型:
+  - 类型:rerank
+  - 模型名:BAAI/bge-reranker-base
+  - Base URL:http://tei-rerank:80   (后端在容器内,用容器名)
+
+注:embedding 已由 Builtin 自动挡接好,无需手动注册。
+
+
+【7. 设置系统默认模型】
+
+系统模型设置 里:
+  - Embedding 模型 → 选 Builtin 的 bge-base-zh-v1.5
+  - Rerank 模型    → 选刚注册的 bge-reranker-base
+  - Chat 模型      → 配你自己的 LLM(OpenAI/通义/本地等)
+
+
+【8. 完成】
+
+新建知识库 → 上传文档 → 解析 → 在「检索测试」里验证 embedding + rerank 是否生效。
+
+
+==================================================================
+【日常运维命令】
+
+# 停 / 启 / 重启全栈
+docker compose -f docker-compose.yml down
+docker compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml restart ragflow-server
+
+# rerank 容器单独管理
+docker restart tei-rerank
+docker logs -f tei-rerank
+
+# 看资源占用
+docker stats
+
+
+==================================================================
+【关键提醒】
+
+1. rerank 是独立容器,不在 compose 里,全栈 down 不会停它,需单独
+   docker stop tei-rerank 管理。
+
+2. Base URL 填法:
+   - 后端在 Docker 里      → 用容器名 http://tei-rerank:80、http://tei:80
+   - 后端在宿主机直跑      → 用 http://localhost:6381、http://localhost:6380
+
+3. 首次下载模型慢是正常的,已配 hf-mirror.com 加速。
+
+4. bge-base-zh-v1.5 是纯中文模型,文档含较多英文时检索质量会下降,
+   届时考虑换 bge-m3(多语言,内存够)。
+
+
+==================================================================
+【内存占用参考(64G 很宽裕)】
+
+  空闲/轻载:约 10~15G
+  繁忙峰值  :约 18~28G(批量解析文档 + 高并发问答)
+
+  大头:Elasticsearch(常驻 4~8G)、task_executor 文档解析(峰值 3~8G)
+  两个模型很小:embedding + rerank 合计约 3~4G
+  真正瓶颈是 8 核 CPU,不是内存。
