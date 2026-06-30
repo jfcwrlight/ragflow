@@ -44,6 +44,8 @@ docker logs -f ragflow-server          # 看到 "RAGFlow server is ready" 即就
 curl -u elastic:infini_rag_flow 'http://localhost:1200/_cluster/health?pretty'
 # 如果 es01 反复重启,先看日志:
 docker compose -f docker-compose.yml logs --tail=100 es01
+# 如日志包含 data/node.lock AccessDenied,执行:
+# sudo mkdir -p data/esdata01 && sudo chown -R 1000:0 data/esdata01 && sudo chmod -R ug+rwX data/esdata01
 
 
 【3. 确认 Rerank 容器】

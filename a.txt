@@ -43,6 +43,8 @@ docker compose -f docker/docker-compose-base.yml ps
 curl -u elastic:infini_rag_flow 'http://localhost:1200/_cluster/health?pretty'
 # 如果 es01 反复重启,先看日志:
 docker compose -f docker/docker-compose-base.yml logs --tail=100 es01
+# 如日志包含 data/node.lock AccessDenied,执行:
+# sudo mkdir -p docker/data/esdata01 && sudo chown -R 1000:0 docker/data/esdata01 && sudo chmod -R ug+rwX docker/data/esdata01
 
 
 【2. 确认 Rerank 容器】

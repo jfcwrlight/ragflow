@@ -5,7 +5,7 @@ services:
     image: elasticsearch:${STACK_VERSION}
     user: "0"
     entrypoint: ["sh", "-c"]
-    command: ["mkdir -p /usr/share/elasticsearch/data && chown -R 1000:0 /usr/share/elasticsearch/data && chmod -R g+rwX /usr/share/elasticsearch/data"]
+    command: ["mkdir -p /usr/share/elasticsearch/data && chown -R 1000:0 /usr/share/elasticsearch/data && chmod -R ug+rwX /usr/share/elasticsearch/data"]
     volumes:
       - ./data/esdata01:/usr/share/elasticsearch/data
     restart: "no"
@@ -22,7 +22,7 @@ services:
     # Official ES image ACL on /tmp denies writes for user elasticsearch (r-x only).
     # entrypoint.sh needs a writable temp dir for bash here-documents.
     tmpfs:
-      - /tmp:mode=1777,size=512m
+      - /tmp:exec,mode=1777,size=512m
     ports:
       - ${ES_PORT}:9200
     env_file: .env
